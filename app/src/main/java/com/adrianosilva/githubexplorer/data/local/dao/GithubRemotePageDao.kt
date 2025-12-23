@@ -11,7 +11,7 @@ interface GithubRemotePageDao {
     @Upsert
     suspend fun upsert(page: GithubRemotePageEntity)
 
-    @Query("SELECT * FROM remote_pages WHERE `query` = :query")
+    @Query("SELECT * FROM remote_pages WHERE `query` = :query COLLATE NOCASE LIMIT 1")
     suspend fun getByQuery(query: String): GithubRemotePageEntity?
 
     @Query("DELETE FROM remote_pages WHERE `query` = :query")

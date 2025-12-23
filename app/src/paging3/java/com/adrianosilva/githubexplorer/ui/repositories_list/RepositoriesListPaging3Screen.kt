@@ -13,13 +13,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -58,15 +58,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.paging.LoadState
+import androidx.paging.PagingData
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.adrianosilva.githubexplorer.domain.model.Repository
 import com.adrianosilva.githubexplorer.ui.theme.GithubExplorerTheme
-import com.adrianosilva.githubexplorer.ui.util.ObserveAsEvents
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
 
@@ -77,20 +82,25 @@ fun RepositoriesListScreenRoot(
     animatedContentScope: AnimatedContentScope,
     onNavigateToDetails: (repositoryId: Int) -> Unit
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val repositories by viewModel.repositories.collectAsStateWithLifecycle()
+    val lazyPagingItems = viewModel.paging3Repos.collectAsLazyPagingItems()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    ObserveAsEvents(viewModel.events) { message ->
-        scope.launch {
-            snackbarHostState.showSnackbar(message)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lazyPagingItems.loadState, lifecycleOwner.lifecycle) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (lazyPagingItems.loadState.refresh is LoadState.Error) {
+                val error = (lazyPagingItems.loadState.refresh as LoadState.Error).error
+                snackbarHostState.showSnackbar("Error refreshing repositories: ${error.localizedMessage}")
+            }
+            if (lazyPagingItems.loadState.append is LoadState.Error) {
+                val error = (lazyPagingItems.loadState.append as LoadState.Error).error
+                snackbarHostState.showSnackbar("Error loading more repositories: ${error.localizedMessage}")
+            }
         }
     }
 
     RepositoriesListScreen(
-        state = state,
-        repositories = repositories,
+        lazyPagingItems = lazyPagingItems,
         sharedTransitionScope = sharedTransitionScope,
         animatedContentScope = animatedContentScope,
         snackbarHostState = snackbarHostState,
@@ -100,9 +110,7 @@ fun RepositoriesListScreenRoot(
                     onNavigateToDetails(action.repositoryId)
                 }
 
-                else -> {
-                    viewModel.onAction(action)
-                }
+                else -> viewModel.onAction(action)
             }
         }
     )
@@ -111,8 +119,7 @@ fun RepositoriesListScreenRoot(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RepositoriesListScreen(
-    state: RepositoriesListUiState,
-    repositories: List<Repository>,
+    lazyPagingItems: LazyPagingItems<Repository>,
     sharedTransitionScope: SharedTransitionScope,
     animatedContentScope: AnimatedContentScope,
     snackbarHostState: SnackbarHostState,
@@ -126,10 +133,18 @@ private fun RepositoriesListScreen(
         derivedStateOf { gridState.firstVisibleItemIndex > 2 }
     }
 
+    val isLoading by remember {
+        derivedStateOf {
+            lazyPagingItems.loadState.refresh is LoadState.Loading ||
+                    lazyPagingItems.loadState.append is LoadState.Loading
+        }
+    }
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .imePadding(),
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             RepositoriesListTopAppBar(
@@ -161,12 +176,12 @@ private fun RepositoriesListScreen(
     ) { innerPadding ->
 
         PullToRefreshBox(
-            isRefreshing = state.isLoading,
-            onRefresh = { onAction(RepositoriesListAction.Refresh) },
+            isRefreshing = isLoading,
+            onRefresh = { lazyPagingItems.refresh() },
             modifier = Modifier.padding(innerPadding)
         ) {
             RepositoriesList(
-                repositories = repositories,
+                lazyPagingItems = lazyPagingItems,
                 gridState = gridState,
                 onAction = onAction,
                 sharedTransitionScope = sharedTransitionScope,
@@ -190,7 +205,6 @@ private fun RepositoriesListTopAppBar(
 
     LaunchedEffect(textFieldState.text) {
         delay(1000L) // wait for user to stop typing
-        ensureActive()
         val query = textFieldState.text.toString()
         if (query.length >= 3) {
             onAction(RepositoriesListAction.SearchByLanguage(query))
@@ -238,33 +252,13 @@ private fun RepositoriesListTopAppBar(
 
 @Composable
 private fun RepositoriesList(
-    repositories: List<Repository>,
+    lazyPagingItems: LazyPagingItems<Repository>,
     gridState: LazyGridState,
     onAction: (RepositoriesListAction) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedContentScope: AnimatedContentScope,
     modifier: Modifier = Modifier
 ) {
-    val isScrolledToEnd by remember {
-        derivedStateOf {
-            val layoutInfo = gridState.layoutInfo
-            val visibleItemsInfo = layoutInfo.visibleItemsInfo
-            if (layoutInfo.totalItemsCount <= 1) {
-                false
-            } else {
-                val lastVisibleItem = visibleItemsInfo.last()
-                val trigger = 20 // trigger when 20 items from end
-                lastVisibleItem.index >= layoutInfo.totalItemsCount - 1 - trigger
-            }
-        }
-    }
-
-    LaunchedEffect(isScrolledToEnd) {
-        if (isScrolledToEnd) {
-            onAction(RepositoriesListAction.LoadMore)
-        }
-    }
-
     LazyVerticalGrid(
         state = gridState,
         modifier = modifier.fillMaxSize(),
@@ -275,17 +269,18 @@ private fun RepositoriesList(
         item(span = { GridItemSpan(2) }) {
             HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
         }
-        items(
-            items = repositories,
-            key = { it.id },
-            contentType = { "RepositoryListItem" }
-        ) {
-            RepositoryListItem(
-                repository = it,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedContentScope = animatedContentScope,
-                onClick = { onAction(RepositoriesListAction.GoToRepositoryDetails(it.id)) }
-            )
+        items(lazyPagingItems.itemCount) { index ->
+            val repository = lazyPagingItems[index]
+            if (repository != null) {
+                RepositoryListItem(
+                    repository = repository,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedContentScope = animatedContentScope,
+                    onClick = {
+                        onAction(RepositoriesListAction.GoToRepositoryDetails(repository.id))
+                    }
+                )
+            }
         }
     }
 }
@@ -375,58 +370,59 @@ private fun RepositoryListItem(
 @Preview(showBackground = true)
 @Composable
 private fun RepositoriesListScreenPreview() {
+    val repoList = listOf(
+        Repository(
+            id = 1,
+            name = "Repo 1",
+            fullName = "User/Repo1",
+            description = "This is the first repository",
+            ownerAvatarUrl = "",
+            stargazersCount = 223,
+            forksCount = 23,
+            openIssuesCount = 11,
+            lastUpdated = ZonedDateTime.parse("2024-06-01T12:34:56Z"),
+            htmlUrl = "www.google.com",
+            language = "Kotlin, Java",
+            license = "MIT License",
+        ),
+        Repository(
+            id = 2,
+            name = "Repo 2",
+            fullName = "User/Repo2",
+            description = "This is the second repository with a lot of description to test how it looks in the UI",
+            ownerAvatarUrl = "",
+            stargazersCount = 223,
+            forksCount = 23,
+            openIssuesCount = 11,
+            lastUpdated = ZonedDateTime.parse("2024-06-01T12:34:56Z"),
+            htmlUrl = "www.google.com",
+            language = "Kotlin, Java",
+            license = "MIT License",
+        ),
+        Repository(
+            id = 3,
+            name = "Repo 3",
+            fullName = "User/Repo3",
+            description = "This is the third repository with more description",
+            ownerAvatarUrl = "",
+            stargazersCount = 223,
+            forksCount = 23,
+            openIssuesCount = 11,
+            lastUpdated = ZonedDateTime.parse("2024-06-01T12:34:56Z"),
+            htmlUrl = "www.google.com",
+            language = "Kotlin, Java",
+            license = "MIT License",
+        )
+    )
+
+    val pagingData = PagingData.from(repoList)
+    val fakeDataFlow = MutableStateFlow(pagingData)
+
     GithubExplorerTheme {
         SharedTransitionLayout {
             AnimatedContent(true) {
-
                 RepositoriesListScreen(
-                    state = RepositoriesListUiState(
-                        isLoading = false,
-                    ),
-                    repositories = listOf(
-                        Repository(
-                            id = 1,
-                            name = "Repo 1",
-                            fullName = "User/Repo1",
-                            description = "This is the first repository",
-                            ownerAvatarUrl = "",
-                            stargazersCount = 223,
-                            forksCount = 23,
-                            openIssuesCount = 11,
-                            lastUpdated = ZonedDateTime.parse("2024-06-01T12:34:56Z"),
-                            htmlUrl = "www.google.com",
-                            language = "Kotlin, Java",
-                            license = "MIT License",
-                        ),
-                        Repository(
-                            id = 2,
-                            name = "Repo 2",
-                            fullName = "User/Repo2",
-                            description = "This is the second repository with a lot of description to test how it looks in the UI",
-                            ownerAvatarUrl = "",
-                            stargazersCount = 223,
-                            forksCount = 23,
-                            openIssuesCount = 11,
-                            lastUpdated = ZonedDateTime.parse("2024-06-01T12:34:56Z"),
-                            htmlUrl = "www.google.com",
-                            language = "Kotlin, Java",
-                            license = "MIT License",
-                        ),
-                        Repository(
-                            id = 3,
-                            name = "Repo 3",
-                            fullName = "User/Repo3",
-                            description = "This is the third repository with more description",
-                            ownerAvatarUrl = "",
-                            stargazersCount = 223,
-                            forksCount = 23,
-                            openIssuesCount = 11,
-                            lastUpdated = ZonedDateTime.parse("2024-06-01T12:34:56Z"),
-                            htmlUrl = "www.google.com",
-                            language = "Kotlin, Java",
-                            license = "MIT License",
-                        )
-                    ),
+                    lazyPagingItems = fakeDataFlow.collectAsLazyPagingItems(),
                     sharedTransitionScope = this@SharedTransitionLayout,
                     animatedContentScope = this,
                     snackbarHostState = SnackbarHostState(),

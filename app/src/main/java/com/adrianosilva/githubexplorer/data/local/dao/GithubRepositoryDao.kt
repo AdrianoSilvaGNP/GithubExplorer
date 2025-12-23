@@ -1,5 +1,6 @@
 package com.adrianosilva.githubexplorer.data.local.dao
 
+import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
@@ -35,5 +36,11 @@ interface GithubRepositoryDao {
 
     @Query("SELECT COUNT(*) FROM repositories")
     suspend fun getRepositoryCount(): Int
+
+    @Query("SELECT * FROM repositories ORDER BY id ASC")
+    fun pagingSourceRepositories(): PagingSource<Int, GithubRepositoryEntity>
+
+    @Query("SELECT * FROM repositories WHERE language LIKE :language || '%' COLLATE NOCASE ORDER BY id ASC")
+    fun pagingRepositoriesByLanguage(language: String): PagingSource<Int, GithubRepositoryEntity>
 
 }

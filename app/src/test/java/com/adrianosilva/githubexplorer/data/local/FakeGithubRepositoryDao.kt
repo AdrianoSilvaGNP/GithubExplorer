@@ -1,5 +1,6 @@
 package com.adrianosilva.githubexplorer.data.local
 
+import androidx.paging.PagingSource
 import com.adrianosilva.githubexplorer.data.local.dao.GithubRepositoryDao
 import com.adrianosilva.githubexplorer.data.local.entity.GithubRepositoryEntity
 import kotlinx.coroutines.flow.Flow
@@ -69,4 +70,11 @@ class FakeGithubRepositoryDao: GithubRepositoryDao {
         return repositoriesFlow.value.size
     }
 
+    override fun pagingSourceRepositories(): PagingSource<Int, GithubRepositoryEntity> {
+        throw NotImplementedError()
+    }
+
+    override fun pagingRepositoriesByLanguage(language: String): PagingSource<Int, GithubRepositoryEntity> {
+        throw NotImplementedError()
+    }
 }

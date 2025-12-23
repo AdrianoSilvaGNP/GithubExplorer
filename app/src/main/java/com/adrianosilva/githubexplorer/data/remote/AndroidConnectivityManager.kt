@@ -12,7 +12,7 @@ class AndroidConnectivityManager(context: Context) {
     private val connectivityManager =
         context.getSystemService(ConnectivityManager::class.java) as ConnectivityManager
 
-    var hasInternetConnection: Boolean = false
+    var hasInternetConnection: Boolean = true
         private set
 
     init {

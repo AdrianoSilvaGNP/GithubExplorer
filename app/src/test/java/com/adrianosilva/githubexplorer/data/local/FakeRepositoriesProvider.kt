@@ -1,5 +1,6 @@
 package com.adrianosilva.githubexplorer.data.local
 
+import androidx.paging.PagingData
 import com.adrianosilva.githubexplorer.domain.model.Repository
 import com.adrianosilva.githubexplorer.domain.repository.RepositoriesProvider
 import com.adrianosilva.githubexplorer.domain.util.ErrorReason
@@ -77,5 +78,9 @@ class FakeRepositoriesProvider: RepositoriesProvider {
 
     override suspend fun isRepositoryListEmpty(): Boolean {
         return repositoriesFlow.value.isEmpty()
+    }
+
+    override fun observePaginatedRepositories(language: String): Flow<PagingData<Repository>> {
+        throw NotImplementedError()
     }
 }

@@ -1,5 +1,10 @@
 package com.adrianosilva.githubexplorer.data.repository
 
+import androidx.paging.ExperimentalPagingApi
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.map
 import com.adrianosilva.githubexplorer.data.deconstructToEntities
 import com.adrianosilva.githubexplorer.data.local.dao.GithubRemotePageDao
 import com.adrianosilva.githubexplorer.data.local.dao.GithubRepositoryDao
@@ -7,6 +12,7 @@ import com.adrianosilva.githubexplorer.data.local.dao.GithubUserDao
 import com.adrianosilva.githubexplorer.data.local.entity.GithubRemotePageEntity
 import com.adrianosilva.githubexplorer.data.mapToDomain
 import com.adrianosilva.githubexplorer.data.remote.GithubApiService
+import com.adrianosilva.githubexplorer.data.remote.GithubPagingRemoteMediator
 import com.adrianosilva.githubexplorer.domain.model.Repository
 import com.adrianosilva.githubexplorer.domain.repository.RepositoriesProvider
 import com.adrianosilva.githubexplorer.domain.util.ErrorReason
@@ -167,6 +173,32 @@ class GithubRepositoryImpl(
         return withContext(dispatcher) {
             val count = githubRepositoryDao.getRepositoryCount()
             return@withContext count == 0
+        }
+    }
+
+    @OptIn(ExperimentalPagingApi::class)
+    override fun observePaginatedRepositories(language: String): Flow<PagingData<Repository>> {
+        return Pager(
+            config = PagingConfig(
+                pageSize = 50,
+                prefetchDistance = 50,
+            ),
+            remoteMediator = GithubPagingRemoteMediator(
+                apiService = apiService,
+                repositoryDao = githubRepositoryDao,
+                userDao = githubUserDao,
+                pageDao = githubRemotePageDao,
+                query = language
+            ),
+            pagingSourceFactory = {
+                if (language.isBlank()) {
+                    githubRepositoryDao.pagingSourceRepositories()
+                } else {
+                    githubRepositoryDao.pagingRepositoriesByLanguage(language)
+                }
+            }
+        ).flow.map { pagingData ->
+            pagingData.map { entity -> entity.mapToDomain() }
         }
     }
 }

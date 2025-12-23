@@ -24,6 +24,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "pagination"
+
+    productFlavors {
+        create("manualPaging") {
+            dimension = "pagination"
+            applicationIdSuffix = ".manual"
+            versionNameSuffix = "-manual"
+        }
+        create("paging3") {
+            dimension = "pagination"
+            applicationIdSuffix = ".paging3"
+            versionNameSuffix = "-paging3"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -75,6 +90,10 @@ dependencies {
 
     implementation(libs.room.runtime)
     ksp(libs.room.compiler)
+    implementation(libs.room.paging)
+
+    "paging3Implementation"(libs.androidx.paging3.runtime)
+    "paging3Implementation"(libs.androidx.paging3.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

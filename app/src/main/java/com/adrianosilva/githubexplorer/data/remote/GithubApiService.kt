@@ -11,6 +11,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.encodeURLParameter
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.util.network.UnresolvedAddressException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -31,6 +32,7 @@ class GithubApiService(
     }
 
     suspend fun getPublicRepositories(since: Int = 0): Result<List<GitHubRepositoryDto>> = withContext(dispatcher) {
+        Timber.d("Fetching public repositories since=$since")
         if (!connectivityManager.hasInternetConnection) {
             return@withContext Result.Error(ErrorReason.NoConnection)
         }
@@ -81,11 +83,14 @@ class GithubApiService(
     }
 
     suspend fun searchRepositories(query: String, page: Int = 1): Result<GithubSearchResponseDto> = withContext(dispatcher) {
+        Timber.d("Searching repositories with query='$query', page=$page")
         if (!connectivityManager.hasInternetConnection) {
             return@withContext Result.Error(ErrorReason.NoConnection)
         }
         try {
-            val response = client.get("${BASE_URL}/search/repositories?q=$query&per_page=100&page=$page") {
+            val encodedQuery = query.encodeURLParameter()
+
+            val response = client.get("${BASE_URL}/search/repositories?q=$encodedQuery&per_page=100&page=$page") {
                 headers.append(HttpHeaders.Accept, "application/vnd.github+json")
                 headers.append("X-GitHub-Api-Version", "2022-11-28")
             }

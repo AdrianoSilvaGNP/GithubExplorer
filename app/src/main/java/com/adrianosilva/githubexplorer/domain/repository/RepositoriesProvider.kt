@@ -1,5 +1,6 @@
 package com.adrianosilva.githubexplorer.domain.repository
 
+import androidx.paging.PagingData
 import com.adrianosilva.githubexplorer.domain.model.Repository
 import com.adrianosilva.githubexplorer.domain.util.Result
 import kotlinx.coroutines.flow.Flow
@@ -28,4 +29,10 @@ interface RepositoriesProvider {
     suspend fun fetchRepositoriesByLanguage(language: String): Result<Unit>
 
     suspend fun isRepositoryListEmpty(): Boolean
+
+    /**
+     * NOTE: Exposing PagingData in the domain layer is a pragmatic architectural trade-off.
+     * This approach reduces boilerplate.
+     */
+    fun observePaginatedRepositories(language: String): Flow<PagingData<Repository>>
 }
